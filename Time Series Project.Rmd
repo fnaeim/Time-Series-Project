@@ -1,0 +1,288 @@
+---
+title: "174_Project"
+author: "Claire Hua (9952425)"
+date: "11/19/2018"
+output: pdf_document
+---
+
+```{r, cache=TRUE}
+install.packages("robustbase")
+```
+
+### Abstract
+
+The purpose of this project is to work with data based off of the monthly Shanghai auction system to sell a limited number of license plates to fossil-fuel car buyers. The data has been contstantly collected every month since January of 2002 and continues to be updated to this day. Throughout the project, we use various forms of time series techniques and methods to analyze the features of the data. These methods include ACF, PACF, log transofrmation, square root transformation, box-cox transformation, differencing, AIC for model comparison, and back transformation. We also use the information to help us forecast the predictions of the license plate proportions up until the year 2020. After making the time series forecast and analysis of the data set, we come to the conclusion that the monthly Shanghai proportion of license plates for fossil-fuel car buyers will continue to grow at a very slow rate.
+
+### Introduction
+
+For the data we are analyzing, we are concentrating on the prediction of monthly auction sales of license plates in Shanghai for fossil-fuel car buyers. Our data begins in January 2002 and is continuously updated each month. We forecast the monthly proportion of licenses issued and the number of applicants up until the year 2020 to determine whether the proportion of licenses issued to numer of applicants will increase or decrease as time goes on. The license plate in Shanghai is referred to as "the most expensive piece of metal in the world" and the average price is about $13,000. Due to Shanghai's increasingair pollution problem, this was the government's solution to attempt to combaat the problem.
+
+We are planning on using time series techniques to predict the coming monthly proportion as well as back-transform to predict information that has lready past. After all analysis is complete, we can see that our predictions tell us that the proportion of licenses issued to number of applicants increases very slowly over time.
+
+```{r setup, cache=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+install.packages("robustbase")
+library(robustbase)
+install.packages("qpcR")
+library(qpcR)
+library(rgl)
+install.packages("MuMIn")
+library(MuMIn)
+install.packages("forecast")
+library(forecast)
+```
+### Initial Analysis
+
+We first convert the data into a time series and plot each of the four variables, lowest price, total number of lisenses issued, average price, and total number of applicants.For the plot of lowest price, we can see that for about half the plot, the price seems to be slowly increasing with a little fluctuation. There then seems to be a sudden spike in which the lowest price increases significantly. For the plot of total number of licenses issued, we can see that the number issued is partially consistant with little increase as time goes on. There are however instances in which the number of licenses issued is dramatically chnaged, as we can see around 75, and the decrease from approximately 145 to 175.For the plot of average price, we can see that there is an upward trend and for the plot of total number of applicants, we can see that it is a low amount up until approximately 150. At this point in time, the number of applicants begins to increase dramatically and then becomes constant at around 250,000, but then seems to begin to drop back down again.
+```{r, initial analysis}
+shanghai <- read.csv("shanghai.csv", header = T)
+#convert data into time series format
+#gives proportion of licenses issued bc does total minus number of applicants
+shanghai_prop = ts(shanghai[,2]/shanghai[,5], start=c(2002,01), frequency = 12)
+
+ts.plot(shanghai$Â.lowest.price)
+ts.plot(shanghai$Total.number.of.license.issued)
+ts.plot(shanghai$avg.price)
+ts.plot(shanghai$Total.number.of.applicants)
+
+```
+
+We continue by finding the mean and variance of the proportion of licenses issued to total number of applicants. We get values of 0.375632 for the mean and 0.0609048 for the variance. Then, once we have plotted the time series, we see that it begins to tail off near the end, and so we can assume that there is a chance the variance is not constant. We then use ACF and PACF plots to attempt to hypothesize the type of series we are working with. The ACF seems to trail off, which shows us a constant decrease and cuts off right before lag 2 while the PACF also seems to cut off right before lag 2. So with this information, we can hypothesize that the original series is that of an AR model.
+
+```{r}
+mean(shanghai_prop)
+var(shanghai_prop)
+#time series plot
+#variance doesnt seem constant bc it tails off
+ts.plot(shanghai_prop, main = "Monthly License Issues in Shanghai (2002-2018)")
+op <- par(mfrow=c(1,2))
+acf(shanghai_prop,main="", xlim=c(1,3))
+pacf(shanghai_prop,ylab="PACF",main="", xlim=c(1,3))
+title("ACF and PACF of Proportion of Shanghai-Issued License Plates",outer=T,line=-1)
+par(op)
+#the lags correspond to time period where lag=1 is also lag=12
+```
+
+### Transformations
+
+We first begin the transformation by testing to see which of the three forms of transformations works best in our situation. We are testing between Box-cox tranformation, Log transformation, and Square root transformation. We then plot each of the tranformations and compare them to our original plot.
+
+```{r}
+# three transformations (boxcox, log. sqrt)
+library(MASS)
+t = 1:length(shanghai_prop)
+fit = lm(shanghai_prop ~ t)
+bcTransform = boxcox(shanghai_prop ~ t,plotit = TRUE)
+#choose a lambda of 1/2
+
+#max point on the bc graph (should be .46)
+lambda = bcTransform$x[which(bcTransform$y == max(bcTransform$y))]
+lambda
+shanghai_prop.bc = (1/lambda)*(shanghai_prop^lambda-1) #boxcox
+shanghai_prop.log <- log(shanghai_prop)#log 
+shanghai_prop.sqrt <- sqrt(shanghai_prop) # sqrt
+
+op <- par(mfrow = c(1,3)) 
+ts.plot(shanghai_prop.bc,main = "Box-Cox") 
+ts.plot(shanghai_prop.log,main = "Log")
+#comparing original and transformed data
+par(mfrow=c(1,2))
+ts.plot(shanghai_prop, main = "Original Data")
+ts.plot(shanghai_prop.sqrt,main = "Square-Root Transformed Data") 
+
+par(op)
+```
+When looking at all the plots above, we quickly realize that the graphs are too difficult to interpret and so we find the variances of each to determine which is the best fit for our model. Based off of the results, we can see that the square root transformation gives us the smalles variance value and therefore we determine that this is the best transformation for our model.
+
+```{r}
+#bc graphs are very difficult to understand, we find variance to determine which to use
+var(shanghai_prop)
+var(shanghai_prop.bc)
+var(shanghai_prop.log)
+var(shanghai_prop.sqrt) #sqrt transformation has the smallest variance so we choose this
+```
+
+### Square Root Transformation
+
+Continuing with our chosen Square root transformaton, we plot the ACF and PACF time series and we see that the ACF is still decreasing constantly but no longer cuts off at lag 2 while the PACF plot 
+
+```{r}
+
+op <- par(mfrow=c(1,2))
+acf(shanghai_prop.sqrt, main="",lag.max=20)
+pacf(shanghai_prop.sqrt, ylab="PACF", main="",lag.max=20)
+title("ACF and PACF Square-Root Transformed Time Series ",outer=T,line=-1)
+par(op)
+#PACF cuts off at 4 
+```
+###Differencing to Remove Seasonality
+
+So now we difference at lag 12 to remove the seasonality component and since we want it to be stationary, we want the de-seasonalized data to fluctuate around the mean=0 line. For the ACF, we can see that it begins to slowly decay while the PACF oscillates between the bounds.
+
+```{r}
+#difference at lag=12 to remove seasonality component
+#want to be stationary to want it to fluctuate around the blue line whihc is mean = 0
+shanghai_prop.diff12 <- diff(shanghai_prop.sqrt,12)
+var(shanghai_prop.diff12)
+ts.plot(shanghai_prop.diff12, main = "De-seasonalized data for Shanghai",ylab=expression(nabla~Y[t]))
+abline(h = 0,lty = 2,col="blue")
+
+op <- par(mfrow=c(1,2))
+acf(shanghai_prop.diff12,main="")
+pacf(shanghai_prop.diff12,ylab="PACF",main="")
+title("Shanghai proportion of license plates, differenced at lag 12",outer=T,line=-1)
+par(op)
+```
+
+We difference again at lag 1 to remove the trend component of the data. This gives us a de-trended and de-seasonalized series to qork with. The first time we difference at lag 1, we get a variance value of 0.01220669 but when we attempt to difference a second time at lag 1, our variances increases to 0.03093042 and so this tells us to only difference once. We can see that our de-trended and de-seasonalized data plot is now fluctuating very closely around the mean = 0 line which shows that it is stationary. Our ACF plot oscillates between the bounds while the PACF seems to cut off at lag 0.1.
+
+```{r}
+#difference at lag 1 to remove trend
+shanghai_prop.diff1 <- diff(shanghai_prop.sqrt, 1)
+var(shanghai_prop.diff1)
+ts.plot(shanghai_prop.diff1, main = "De-trended and De-seasonalized data for  proportion of license plates",ylab=expression(nabla~Y[t]))
+abline(h = 0,lty = 2,col="blue")
+
+op <- par(mfrow=c(1,2))
+acf(shanghai_prop.diff1,main="")
+pacf(shanghai_prop.diff1,ylab="PACF",main="")
+title("ACF and PACF of proportion of license plates, differenced at lag 1",outer=T,line=-1)
+par(op)
+
+#differencing at lag 1 twice increased the variance therefore we choose to difference once
+shanghai_prop.diff2 <- diff(shanghai_prop.sqrt, 1, 2)
+var(shanghai_prop.diff2)
+ts.plot(shanghai_prop.diff2, main = "Proportion of license plates after twice differenced at lag 1",ylab=expression(nabla~Y[t]))
+abline(h = 0,lty = 2,col="blue")
+```
+
+### Parameter Estimation using Yule-Walker
+
+We perform preliminary estimation using Yule-Walker and it gives us an AR model of order 13.So this may be an AR(13) process
+
+```{r}
+# Preliminary estimation using Yule-Walker
+ar(shanghai_prop.diff, method="yule-walker") #AR(13)
+```
+
+### Fitting an ARMA Process
+
+Using the auto.arima function, we find that the estimate is a ARIMA (1,0,1) model and so we use this ARMA(1,1) to find the best possible model.
+
+```{r}
+#auto.arima is used to give us the best model
+fit_arma <-auto.arima(shanghai_prop.diff1, stationary = TRUE, seasonal = FALSE)
+fit_arma
+```
+### ARMA Models
+
+Using the loop below, we look test each of the possible ARMA(p,q) parameter values to see which process gives us the smallest value of AIC. Looking at our results, we can see that ARMA(1,1) gives us the loweres AIC value of -217.3153
+
+```{r} 
+#gives us the model with the smallest AIC (should be ARMA (1,1))
+#running for loops to test all parameter values of ARMA(p,q)
+for (i in 0:1) {
+  for (j in 0:1) {
+    print(i)
+    print(j)
+    print(AICc(arima(shanghai_prop, order = c(i,0,j), method = "ML")))
+  }
+}
+```
+### Checking for the best model fit
+
+We begin to check each of the three possible models: AR(1), MA(1), and ARMA(1,1) to see which is the best fit. We fit each of the three and then test each individual AIC to see which produces the lowest value. Our results shows us that ARMA(1,1) has returned the lowest AIC of -346.0987 while MA(1) gives us -106.3236 and AR(1) gives us -201.9093. Therefore we can conclude that an ARMA(1,1) model is best for our data.
+
+```{r}
+#comparing ARMA(1,1), AR(1), MA(1) to find best model
+fit_ar1 <- arima(shanghai_prop, order=c(1,0,0), method="ML")
+fit_ma1 <- arima(shanghai_prop, order=c(0,0,1), method="ML")
+fit_arma11 <- arima(shanghai_prop.diff1, order=c(1,0,1), method="ML")
+AICc(fit_ar1)
+AICc(fit_ma1)
+AICc(fit_arma11) #minimum AIC value of -335.8137
+```
+### Plotting Residuals of ARMA(1,1)
+
+After deciding that ARMA(1,1) is the best model, we then plot the residuals. We can see that the residuals seem to randomly bounce around the 0 line.
+
+```{r}
+#plotting resisuals of ARMA(1,1)
+err <- residuals(fit_arma11)
+plot(err, main="Residuals of ARMA(1,1) Process")
+abline(h=0)
+```
+### Diagnostic Testing for Normality of Residuals
+
+The Shapiro Wilkes test gives us a p-value of 3.169e-12 which is less than our alpha of 0.05. So we conclude that the ARMA(1,1) does not pass the Shapiro Wilkes test.
+
+The Ljung-Box test for constant variance gives us a p-value of 0.7762 which is greater than our alpha of 0.05 and so we can accept the assumption of normaility and conclude that the residuals are random.
+
+The Box-Pierce test gives us a p-value of p-value = 0.7778, which is very similar to that of the Ljung-box test, and since that value is greater than out alpha of 0.05, we can conclude that the residuaals are serially correlated.
+
+We also plot a QQ-Plot and from that we can see that the errors follow the diagonal line, and so we can assume that the errors are normally distributed.
+
+```{r}
+#Diagnostic Checking for normality of residuals
+#Shapiro Wilkes Test
+shapiro.test(err) #significant p-value 
+#Ljung-Box Test - tests for constant variance of residuals
+Box.test(err, type = "Ljung") #do not reject the assumption of normal so the residuals are not highly correlated and are therefore random
+#Box Pierce
+Box.test(err, type = "Box-Pierce") #The residuals are serially correlated as p>.05
+#histogram
+hist(err)
+#qq plot
+qqnorm(err)
+qqline(err, col = "blue")
+```
+
+### Forecasting
+
+Since we have completed identifying the proper model, estimated the parameters, and gone through diagnostic checks, we can now move on towards forecasting the data. We are going to use forecasting to predict the proportional value of licenses issued to number of applicants for the next two years, and since our time is divided up monthly, that means we will forecast 24 months ahead. Since we transormed our data using a Sqaure root transformation, we will need to find the predicted values and then back-transform to forecast our raw data. We used our ARMA(1,1) model and created 24 predicted values, 1 for each of the coming 24 months. We also created an upper and lower confidence interval to calculate a 95% confidence interval for the predicted values. 
+
+```{r}
+library(forecast)
+#forecasts 2 years ahead
+pred.tr <- predict(fit_arma11, n.ahead = 24, newreg = length(shanghai_prop.diff1)+1:length(shanghai_prop.diff1)+24)
+pred.tr
+```
+
+```{r}
+U.tr = pred.tr$pred + 1.96*pred.tr$se
+L.tr = pred.tr$pred - 1.96*pred.tr$se
+ts.plot(shanghai_prop.diff1)
+abline(h=0)
+```
+
+```{r}
+U.tr
+L.tr
+op <- par(mfrow=c(1,1))
+ts.plot(shanghai_prop.diff1, xlim = c(2015,2020), ylim = c(-.5,.5), type = 'l', main = "Forecast of Proportion of Shanghai Issued License Plates")
+points(pred.tr$pred, col = "red")
+max(U.tr)
+lines(U.tr, col = "blue",lty = "dashed")
+lines(L.tr, col = "red",lty = "dashed")
+```
+### Back-Transform
+
+ASK PROF FIRST
+
+```{r}
+#####ask Bapat
+#Back Transformation
+pred.orig <- ((pred.tr$pred)*lambda + 1)^(1/lambda)
+pred.orig
+U = ((U.tr)*lambda + 1)^(1/lambda)
+L = ((L.tr)*lambda + 1)^(1/lambda)
+ts.plot(shanghai_prop.diff1, xlim = c(2010, 2020), ylim = c(-.5,1), type = "l")
+points(pred.orig, col="red")
+lines(U, col = "blue", lty = "dashed")
+lines(L, col = "blue", lty = "dashed")
+ts.plot(shanghai_prop.diff1, xlim = c(2002, 2020), ylim = c(-.5,1), type = "l")
+points(pred.orig, col="red")
+lines(U, col = "blue", lty = "dashed")
+lines(L, col = "blue", lty = "dashed")
+```
